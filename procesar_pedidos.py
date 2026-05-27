@@ -247,12 +247,20 @@ def calcular_pivots(df):
 
     # Sin entrega resumen
     se_res = sin_e.groupby(['Canal','Cliente', CONFIG["col_vendedor"], CONFIG["col_nombre_vend"]]).agg(
-        Pedidos=  (CONFIG["col_doc"],  'nunique'),
-        Lineas=   (CONFIG["col_doc"],  'count'),
-        Venta_Sol=(CONFIG["col_venta"],'sum'),
-        Bloq=     (CONFIG["col_bloq"], lambda x: (x.notna()&(x.str.strip()!='')).sum()),
-        Motivo=   (CONFIG["col_den_bloq"], lambda x: x.dropna().replace('',np.nan).dropna().mode()[0] if len(x.dropna().replace('',np.nan).dropna())>0 else ''),
+        Pedidos=    (CONFIG["col_doc"],  'nunique'),
+        Lineas=     (CONFIG["col_doc"],  'count'),
+        Venta_Sol=  (CONFIG["col_venta"],'sum'),
+        Bloq=       (CONFIG["col_bloq"], lambda x: (x.notna()&(x.str.strip()!='')).sum()),
+        Motivo=     (CONFIG["col_den_bloq"], lambda x: x.dropna().replace('',np.nan).dropna().mode()[0] if len(x.dropna().replace('',np.nan).dropna())>0 else ''),
     ).reset_index().sort_values('Venta_Sol', ascending=False)
+    # Build doc+fecha pairs per client
+    doc_fecha = sin_e.drop_duplicates(subset=[CONFIG["col_doc"]]).sort_values(CONFIG["col_fecha"])
+    doc_fecha_grp = doc_fecha.groupby(['Canal','Cliente', CONFIG["col_vendedor"], CONFIG["col_nombre_vend"]]).apply(
+        lambda x: [(str(r[CONFIG["col_doc"]]), r[CONFIG["col_fecha"]].strftime('%d/%m/%Y') if pd.notna(r[CONFIG["col_fecha"]]) else '') 
+                   for _, r in x.iterrows()]
+    ).reset_index().rename(columns={0:'DocFechaPairs'})
+    se_res = se_res.merge(doc_fecha_grp, on=['Canal','Cliente', CONFIG["col_vendedor"], CONFIG["col_nombre_vend"]], how='left')
+
 
     # NC detalle
     nc_det = nc[['Canal','Cliente',CONFIG["col_doc"],'Fecha_str',CONFIG["col_sku"],'Descripcion',
@@ -512,17 +520,38 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
     ws2.merge_cells('A8:J8'); c=ws2['A8']
     c.value="  RESUMEN POR CLIENTE — CON VENDEDOR RESPONSABLE"
     c.font=Font(name="Arial",bold=True,size=11,color=C["WHITE"]); c.fill=hfill(C["RED"]); c.alignment=Alignment(horizontal='left',vertical='center'); ws2.row_dimensions[8].height=22
-    hdr(ws2,9,range(1,11),["#","Canal","Cliente","Cód. Vendedor","Nombre Vendedor","Pedidos","Líneas","Venta Sol. ($)","Bloqueados","Motivo Bloqueo"],C["ORANGE"])
+    SE_MAX_DOCS = int(se_res['Pedidos'].max()) if len(se_res) else 1
+    base_hdrs = ["#","Canal","Cliente","Cód. Vendedor","Nombre Vendedor","Pedidos","Líneas","Venta Sol. ($)","Bloqueados","Motivo Bloqueo"]
+    doc_hdrs = []
+    for d in range(1, SE_MAX_DOCS+1):
+        doc_hdrs += [f"Doc {d}", f"Fecha {d}"]
+    all_hdrs = base_hdrs + doc_hdrs
+    n_se_cols = len(all_hdrs)
+    hdr(ws2,9,range(1,n_se_cols+1),all_hdrs,C["ORANGE"])
     for j,rdf in se_res.iterrows():
         r=10+list(se_res.index).index(j); rank=list(se_res.index).index(j)+1
+        pairs = rdf['DocFechaPairs'] if isinstance(rdf['DocFechaPairs'], list) else []
+        doc_vals = []
+        for d in range(SE_MAX_DOCS):
+            if d < len(pairs):
+                doc_vals += [pairs[d][0], pairs[d][1]]
+            else:
+                doc_vals += ['', '']
         vals=[rank,rdf['Canal'],rdf['Cliente'],rdf[CONFIG["col_vendedor"]],rdf[CONFIG["col_nombre_vend"]],
-              int(rdf['Pedidos']),int(rdf['Lineas']),rdf['Venta_Sol'],int(rdf['Bloq']),rdf['Motivo']]
+              int(rdf['Pedidos']),int(rdf['Lineas']),rdf['Venta_Sol'],int(rdf['Bloq']),rdf['Motivo']] + doc_vals
         drow(ws2,r,1,vals,alt=(r%2==0)); ws2.cell(r,1).alignment=Alignment(horizontal='center'); ws2.cell(r,8).number_format='#,##0'
         if rdf['Bloq']>0: ws2.cell(r,9).fill=hfill(C["LRED"]); ws2.cell(r,9).font=Font(name="Arial",bold=True,color=C["RED"]); ws2.cell(r,10).fill=hfill(C["LRED"])
+        # Center fecha columns and highlight doc cols lightly
+        for d in range(SE_MAX_DOCS):
+            doc_col = 11 + d*2
+            fecha_col = 12 + d*2
+            if doc_col <= n_se_cols:
+                ws2.cell(r,doc_col).alignment=Alignment(horizontal='center',vertical='center')
+                ws2.cell(r,fecha_col).alignment=Alignment(horizontal='center',vertical='center')
     tr2=10+len(se_res)
-    total_row(ws2,tr2,10,value_cols={6:int(se_res['Pedidos'].sum()),7:int(se_res['Lineas'].sum()),8:se_res['Venta_Sol'].sum()})
+    total_row(ws2,tr2,n_se_cols,value_cols={6:int(se_res['Pedidos'].sum()),7:int(se_res['Lineas'].sum()),8:se_res['Venta_Sol'].sum()})
     ws2.cell(tr2,8).number_format='#,##0'
-    ws2.auto_filter.ref=f"A9:J{9+len(se_res)}"; ws2.freeze_panes='A10'
+    ws2.auto_filter.ref=f"A9:{get_column_letter(n_se_cols)}{9+len(se_res)}"; ws2.freeze_panes='A10'
     sep=tr2+2; ws2.merge_cells(start_row=sep,start_column=1,end_row=sep,end_column=14)
     c=ws2.cell(sep,1,"  DETALLE LÍNEAS SIN ENTREGA"); c.font=Font(name="Arial",bold=True,size=11,color=C["WHITE"])
     c.fill=hfill(C["RED"]); c.alignment=Alignment(horizontal='left',vertical='center'); ws2.row_dimensions[sep].height=22
@@ -530,7 +559,10 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
     for j2,rdet in enumerate(se_det.itertuples(index=False),1):
         r=sep+1+j2; vals=list(rdet); drow(ws2,r,1,vals,alt=(r%2==0)); ws2.cell(r,9).number_format='#,##0'
     ws2.auto_filter.ref=f"A{sep+1}:N{sep+1+len(se_det)}"
-    for i,w in enumerate([18,13,32,14,12,13,38,10,14,10,8,20,12,24],1): ws2.column_dimensions[get_column_letter(i)].width=w
+    base_widths = [5,18,30,14,24,10,10,14,10,22]
+    doc_widths = [14,13] * SE_MAX_DOCS
+    for i,w in enumerate(base_widths + doc_widths, 1):
+        ws2.column_dimensions[get_column_letter(i)].width=w
     print("  ✅ Sin Entrega")
 
     # ── Localidad ─────────────────────────────────────────────────────────────
