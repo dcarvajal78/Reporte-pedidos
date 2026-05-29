@@ -206,7 +206,7 @@ with st.spinner("⏳ Leyendo y procesando el archivo..."):
 
         # Limpiar y calcular
         df = limpiar(df_raw)
-        kpis, canal_df, cliente_df, fecha_df, sku_df, loc_df, vend_df, se_res, se_det, nc_det, base, sin_e = calcular_pivots(df)
+        kpis, canal_df, cliente_df, fecha_df, sku_df, loc_df, vend_df, se_res, se_det, nc_det, base, sin_e, cenf_res, cenf_det = calcular_pivots(df)
 
         # Generar Excel en memoria
         with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_out:
@@ -217,7 +217,8 @@ with st.spinner("⏳ Leyendo y procesando el archivo..."):
         nombre_descarga = f"Reporte_{nombre_base}_{hoy}.xlsx"
 
         escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
-                       sku_df, loc_df, vend_df, se_res, se_det, nc_det, base, ruta_salida)
+                       sku_df, loc_df, vend_df, se_res, se_det, nc_det, base, ruta_salida,
+                       cenf_res=cenf_res, cenf_det=cenf_det)
 
         with open(ruta_salida, "rb") as f:
             excel_bytes = f.read()
