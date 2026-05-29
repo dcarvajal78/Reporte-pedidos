@@ -1,11 +1,11 @@
-
+"""
 ╔══════════════════════════════════════════════════════════════════╗
 ║         PROCESADOR DIARIO DE PEDIDOS — AUTOPLANET               ║
 ║  Uso: python procesar_pedidos.py ARCHIVO.xls                    ║
 ║  Genera: Pedidos_Reporte_YYYY-MM-DD.xlsx                        ║
 ╚══════════════════════════════════════════════════════════════════╝
 """
- 
+
 import sys
 import os
 import pandas as pd
@@ -17,7 +17,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.chart import BarChart, Reference, LineChart
 from openpyxl.formatting.rule import ColorScaleRule
- 
+
 # ══════════════════════════════════════════════════════════════════
 # CONFIGURACIÓN — ajusta estos valores si cambia algo
 # ══════════════════════════════════════════════════════════════════
@@ -31,11 +31,11 @@ CONFIG = {
     "top_vendedores":  50,                # cuántos vendedores mostrar
     "tipo_nc":         "ZDEV",            # ClDocVenta que = nota de crédito
     "col_canal":       "Den.Of.Vta",
-    "col_cliente":     "Nmbr Solic",
+    "col_cliente":     "Nombre del solicitante",
     "col_material":    "Texto breve material",
     "col_fecha":       "FchCrea.Pe",
     "col_vendedor":    "Vendedor",
-    "col_nombre_vend": "Nombre Ven",
+    "col_nombre_vend": "Nombre vendedor",
     "col_venta":       "Mon.Sol.$",
     "col_factura":     "Mon.Fac.$",
     "col_rechaz":      "Mnt.Rechaz",
@@ -50,7 +50,7 @@ CONFIG = {
     "col_den_bloq":    "Den.Bl.Ent",
     "col_mot_rech":    "Mot. Rech.",
 }
- 
+
 # ══════════════════════════════════════════════════════════════════
 # COLORES
 # ══════════════════════════════════════════════════════════════════
@@ -61,7 +61,7 @@ C = {
     "GRAY":   "F1F5F9", "WHITE":  "FFFFFF", "LGRAY2": "E2E8F0",
     "ORANGE": "EA580C", "LORANG": "FFEDD5", "DGRAY":  "64748B",
 }
- 
+
 def hfill(c): return PatternFill("solid", fgColor=c)
 def hfont(bold=True, color="FFFFFF", size=10):
     return Font(name="Arial", bold=bold, color=color, size=size)
@@ -95,7 +95,7 @@ def total_row(ws, r, n_cols, value_cols={}):
     for col, val in value_cols.items():
         ws.cell(r, col).value = val
         ws.cell(r, col).alignment = Alignment(horizontal='right', vertical='center')
- 
+
 # ══════════════════════════════════════════════════════════════════
 # 1. LEER Y LIMPIAR DATOS
 # ══════════════════════════════════════════════════════════════════
@@ -103,7 +103,7 @@ def leer_archivo(ruta):
     print(f"📂 Leyendo: {ruta}")
     with open(ruta, 'r', encoding=CONFIG["encoding"]) as f:
         lines = f.readlines()
- 
+
     fecha_archivo = lines[0].strip()
     hdr_idx = CONFIG["fila_header"]
     data_lines = [lines[hdr_idx]] + [l for l in lines[hdr_idx+2:] if l.strip()]
@@ -111,29 +111,29 @@ def leer_archivo(ruta):
     df.columns = [c.strip() for c in df.columns]
     df = df.drop(columns=['Unnamed: 0'], errors='ignore')
     return df, fecha_archivo
- 
+
 def limpiar(df):
     def cn(s):
         if pd.isna(s): return np.nan
         try: return float(str(s).strip().replace('.','').replace(',','.'))
         except: return np.nan
- 
+
     num_cols = [CONFIG["col_venta"], CONFIG["col_factura"], CONFIG["col_rechaz"],
                 CONFIG["col_cant"], "CtdEntrega", "Neto", "Bruto", "Mnt.bloque"]
     for col in num_cols:
         if col in df.columns: df[col] = df[col].apply(cn)
- 
+
     date_cols = [CONFIG["col_fecha"], "Fch.Cre.En", "Fe.SM real", "FechaFact."]
     for col in date_cols:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], format='%d.%m.%Y', errors='coerce')
- 
+
     str_cols = [CONFIG["col_doc"], CONFIG["col_sku"], CONFIG["col_vendedor"],
                 CONFIG["col_entrega"], CONFIG["col_tipo_doc"]]
     for col in str_cols:
         if col in df.columns:
             df[col] = df[col].apply(lambda x: str(x).strip() if pd.notna(x) else x)
- 
+
     df['Canal']       = df[CONFIG["col_canal"]].str.strip()
     df['Cliente']     = df[CONFIG["col_cliente"]].str.strip()
     df['Descripcion'] = df[CONFIG["col_material"]].str.strip()
@@ -145,7 +145,7 @@ def limpiar(df):
     df['Sin_Entrega'] = df[CONFIG["col_entrega"]].isna() | (df['Estatus_SM'] == 'A')
     df['Fac_Neto']    = np.where(df['Es_ZDEV'], -df[CONFIG["col_factura"]], df[CONFIG["col_factura"]])
     return df
- 
+
 # ══════════════════════════════════════════════════════════════════
 # 2. CALCULAR PIVOTS
 # ══════════════════════════════════════════════════════════════════
@@ -153,7 +153,7 @@ def calcular_pivots(df):
     base = df[~df['Es_ZDEV']]
     nc   = df[df['Es_ZDEV']]
     sin_e= base[base['Sin_Entrega']]
- 
+
     # KPIs globales
     kpis = {
         "total_pedidos":   base[CONFIG["col_doc"]].nunique(),
@@ -168,7 +168,7 @@ def calcular_pivots(df):
     kpis["total_fac_neto"] = kpis["total_fac_bruto"] - kpis["total_nc"]
     ped_sm = base[base['Estatus_SM']=='C'][CONFIG["col_doc"]].nunique()
     kpis["tasa_sm"] = ped_sm / kpis["total_pedidos"] * 100 if kpis["total_pedidos"] else 0
- 
+
     # Canal
     canal_df = base.groupby('Canal').agg(
         Pedidos=   (CONFIG["col_doc"],  'nunique'),
@@ -183,12 +183,12 @@ def calcular_pivots(df):
     canal_df['Fac_Neto'] = canal_df['Fac_Bruto'] - canal_df['NC']
     canal_df['Part_%']   = canal_df['Venta_Sol'] / canal_df['Venta_Sol'].sum()
     canal_df = canal_df.sort_values('Venta_Sol', ascending=False)
- 
+
     # Cliente
     # Vendedor principal por cliente (el de mayor venta)
     vend_principal = base.groupby(['Canal','Cliente', CONFIG["col_nombre_vend"]])[ CONFIG["col_venta"]].sum().reset_index()
     vend_principal = vend_principal.sort_values(CONFIG["col_venta"], ascending=False).drop_duplicates(['Canal','Cliente'])[['Canal','Cliente', CONFIG["col_nombre_vend"]]]
- 
+
     cliente_df = base.groupby(['Canal','Cliente']).agg(
         Pedidos=  (CONFIG["col_doc"],    'nunique'),
         Lineas=   (CONFIG["col_doc"],    'count'),
@@ -201,7 +201,7 @@ def calcular_pivots(df):
     cliente_df = cliente_df.merge(nc_cli, on=['Canal','Cliente'], how='left').fillna({'NC':0})
     cliente_df['Fac_Neto'] = cliente_df['Fac_Bruto'] - cliente_df['NC']
     cliente_df = cliente_df.sort_values('Venta_Sol', ascending=False).head(CONFIG["top_clientes"])
- 
+
     # Fecha
     fecha_df = base.groupby(['Canal','Fecha_str']).agg(
         Pedidos=  (CONFIG["col_doc"],  'nunique'),
@@ -209,7 +209,7 @@ def calcular_pivots(df):
         Venta_Sol=(CONFIG["col_venta"],'sum'),
         Rechazado=('Rechaz','sum'),
     ).reset_index().sort_values('Fecha_str')
- 
+
     # SKU
     sku_df = base.rename(columns={CONFIG["col_sku"]: "SKU_SAP"}).groupby(["Canal","SKU_SAP","Descripcion"]).agg(
         Unidades= (CONFIG["col_cant"],'sum'),
@@ -218,14 +218,14 @@ def calcular_pivots(df):
         Rechazado=('Rechaz','sum'),
         Clientes= ('Cliente','nunique'),
     ).reset_index().sort_values('Venta_Sol', ascending=False).head(CONFIG["top_skus"])
- 
+
     # Localidad
     loc_df = base.groupby(['Canal','Localidad']).agg(
         Pedidos=  (CONFIG["col_doc"],  'nunique'),
         Venta_Sol=(CONFIG["col_venta"],'sum'),
         Clientes= ('Cliente','nunique'),
     ).reset_index().sort_values('Venta_Sol', ascending=False).head(CONFIG["top_localidades"])
- 
+
     # Vendedores
     vend_df = base.groupby(['Canal', CONFIG["col_vendedor"], CONFIG["col_nombre_vend"]]).agg(
         Pedidos=  (CONFIG["col_doc"],    'nunique'),
@@ -244,7 +244,7 @@ def calcular_pivots(df):
     vend_df = vend_df.merge(se_vend, on=[CONFIG["col_vendedor"], CONFIG["col_nombre_vend"]], how='left').fillna({'SE_Ped':0,'SE_Val':0})
     vend_df['Fac_Neto'] = vend_df['Fac_Bruto'] - vend_df['NC_ZDEV']
     vend_df = vend_df.sort_values('Venta_Sol', ascending=False).head(CONFIG["top_vendedores"])
- 
+
     # Sin entrega resumen
     se_res = sin_e.groupby(['Canal','Cliente', CONFIG["col_vendedor"], CONFIG["col_nombre_vend"]]).agg(
         Pedidos=    (CONFIG["col_doc"],  'nunique'),
@@ -260,24 +260,24 @@ def calcular_pivots(df):
                    for _, r in x.iterrows()]
     ).reset_index().rename(columns={0:'DocFechaPairs'})
     se_res = se_res.merge(doc_fecha_grp, on=['Canal','Cliente', CONFIG["col_vendedor"], CONFIG["col_nombre_vend"]], how='left')
- 
- 
+
+
     # NC detalle
     nc_det = nc[['Canal','Cliente',CONFIG["col_doc"],'Fecha_str',CONFIG["col_sku"],'Descripcion',
                  CONFIG["col_cant"],CONFIG["col_factura"],CONFIG["col_vendedor"],CONFIG["col_nombre_vend"]]].copy()
- 
+
     # Sin entrega detalle
     se_det = sin_e[['Canal',CONFIG["col_doc"],'Cliente','Localidad','Fecha_str',
                     CONFIG["col_sku"],'Descripcion',CONFIG["col_cant"],CONFIG["col_venta"],
                     'Estatus_SM',CONFIG["col_bloq"],CONFIG["col_den_bloq"],
                     CONFIG["col_vendedor"],CONFIG["col_nombre_vend"]]].copy()
- 
- 
+
+
     # ── Con Entrega y No Facturado ─────────────────────────────────────────
     base['Tiene_Entrega'] = base[CONFIG["col_entrega"]].notna() & (base[CONFIG["col_entrega"]].str.strip() != '') & (base[CONFIG["col_entrega"]].str.strip() != 'nan')
     base['No_Facturado']  = base[CONFIG["col_factura"]].fillna(0) == 0
     cenf = base[base['Tiene_Entrega'] & base['No_Facturado']].copy()
- 
+
     # Resumen por cliente
     cenf_res = cenf.groupby(['Canal','Cliente', CONFIG["col_entrega"], CONFIG["col_doc"], CONFIG["col_vendedor"], CONFIG["col_nombre_vend"]]).agg(
         Lineas    =(CONFIG["col_doc"],    'count'),
@@ -287,31 +287,31 @@ def calcular_pivots(df):
     ).reset_index()
     cenf_res['Diferencia'] = cenf_res['Venta_Sol'] - cenf_res['Fac']
     cenf_res = cenf_res.sort_values('Venta_Sol', ascending=False)
- 
+
     # KPIs
     kpis['cenf_docs']   = cenf[CONFIG["col_doc"]].nunique()
     kpis['cenf_venta']  = cenf[CONFIG["col_venta"]].sum()
     kpis['cenf_canales']= cenf['Canal'].nunique()
- 
+
     # Detalle lineas
     cenf_det = cenf[['Canal', CONFIG["col_doc"], CONFIG["col_entrega"], 'Cliente', 'Localidad', 'Fecha_str',
                       CONFIG["col_sku"], 'Descripcion', CONFIG["col_cant"],
                       CONFIG["col_venta"], CONFIG["col_factura"], 'Rechaz',
                       CONFIG["col_vendedor"], CONFIG["col_nombre_vend"]]].copy()
- 
+
     return kpis, canal_df, cliente_df, fecha_df, sku_df, loc_df, vend_df, se_res, se_det, nc_det, base, sin_e, cenf_res, cenf_det
- 
+
 # ══════════════════════════════════════════════════════════════════
 # 3. ESCRIBIR EXCEL
 # ══════════════════════════════════════════════════════════════════
 def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
                    sku_df, loc_df, vend_df, se_res, se_det, nc_det, base, ruta_salida,
                    cenf_res=None, cenf_det=None):
- 
+
     tv = kpis["total_venta"]; tfb = kpis["total_fac_bruto"]
     tnc = kpis["total_nc"];   tfn = kpis["total_fac_neto"]
     tr  = kpis["total_rechaz"]
- 
+
     # ── Datos Limpios (pandas, rápido) ──────────────────────────────────────
     keep = [CONFIG["col_doc"],'Posición',CONFIG["col_entrega"],CONFIG["col_tipo_doc"],
             'Centro','Solicitan.',CONFIG["col_cliente"],CONFIG["col_canal"],
@@ -328,10 +328,10 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
     for col in [CONFIG["col_fecha"], 'Fe.SM real', 'FechaFact.']:
         if col in df_clean.columns:
             df_clean[col] = df_clean[col].dt.strftime('%d/%m/%Y').fillna('')
- 
+
     with pd.ExcelWriter(ruta_salida, engine='openpyxl') as writer:
         df_clean.to_excel(writer, sheet_name='📋 Datos Limpios', index=False, startrow=1)
- 
+
     wb = load_workbook(ruta_salida)
     ws_d = wb['📋 Datos Limpios']
     ws_d.sheet_view.showGridLines = False; ws_d.sheet_properties.tabColor = C["BLUE"]
@@ -349,7 +349,7 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
     ws_d.row_dimensions[2].height = 28
     ws_d.freeze_panes = 'A3'
     ws_d.auto_filter.ref = f"A2:{get_column_letter(nc2)}{ws_d.max_row}"
- 
+
     # ── Dashboard ────────────────────────────────────────────────────────────
     ws = wb.create_sheet("📊 Dashboard", 0)
     ws.sheet_view.showGridLines = False; ws.sheet_properties.tabColor = C["NAVY"]
@@ -358,7 +358,7 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
     c.font = Font(name="Arial", bold=True, size=16, color=C["WHITE"]); c.fill = hfill(C["NAVY"])
     c.alignment = Alignment(horizontal='left', vertical='center'); ws.row_dimensions[1].height = 36
     ws.merge_cells('A2:M2'); ws['A2'].fill = hfill(C["BLUE"]); ws.row_dimensions[2].height = 5
- 
+
     kpi_list = [
         ("PEDIDOS TOTALES",    f"{kpis['total_pedidos']:,.0f}",       C["NAVY"],   C["LBLUE"]),
         ("VENTA SOLICITADA",   f"${tv/1e6:.1f}M",                     C["BLUE"],   C["LBLUE"]),
@@ -382,7 +382,7 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
         ws.cell(6, col).fill = hfill(color)
     for r in [3,4,5,6,7]: ws.row_dimensions[r].height = 18
     ws.row_dimensions[4].height = 28
- 
+
     ws.merge_cells('A8:I8'); c = ws['A8']
     c.value = "  RESUMEN POR CANAL  (Fac. Neto = Fac. Bruto − NC ZDEV)"
     c.font = Font(name="Arial", bold=True, size=11, color=C["WHITE"])
@@ -400,7 +400,7 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
     total_row(ws, tr_r, 9, value_cols={2:kpis['total_pedidos'],3:kpis['total_lineas'],
         5:tv,6:tfb,7:tnc,8:tfn,9:tr})
     for col in [5,6,7,8,9]: ws.cell(tr_r,col).number_format='#,##0'
- 
+
     ws.merge_cells('K8:Q8'); c=ws['K8']
     c.value="  TOP 10 CLIENTES"; c.font=Font(name="Arial",bold=True,size=11,color=C["WHITE"])
     c.fill=hfill(C["NAVY"]); c.alignment=Alignment(horizontal='left',vertical='center')
@@ -413,7 +413,7 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
     for i,w in enumerate([1,22,10,10,12,14,14,14,14,1,18,30,10,14,14,14,10],1):
         ws.column_dimensions[get_column_letter(i)].width=w
     print("  ✅ Dashboard")
- 
+
     def sheet_canal(name, tab, title, mr, hdrs_list, data_df, data_fn, col_widths, n_tot_cols, tot_vals):
         ws_ = wb.create_sheet(name); ws_.sheet_view.showGridLines=False; ws_.sheet_properties.tabColor=tab
         title_row(ws_, title, mr)
@@ -427,7 +427,7 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
         ws_.auto_filter.ref=f"A2:{get_column_letter(len(hdrs_list))}{tr_}"; ws_.freeze_panes='A3'
         for i,w in enumerate(col_widths,1): ws_.column_dimensions[get_column_letter(i)].width=w
         return ws_
- 
+
     # ── Por Canal ────────────────────────────────────────────────────────────
     ws4 = wb.create_sheet("📦 Por Canal")
     ws4.sheet_view.showGridLines=False; ws4.sheet_properties.tabColor=C["GREEN"]
@@ -453,7 +453,7 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
     chart.add_data(dr,titles_from_data=True); chart.set_categories(cats); ws4.add_chart(chart,f"A{tr4+3}")
     ws4.auto_filter.ref=f"A2:J{tr4}"; ws4.freeze_panes='A3'
     print("  ✅ Por Canal")
- 
+
     # ── Por Cliente ──────────────────────────────────────────────────────────
     ws5=wb.create_sheet("👥 Por Cliente"); ws5.sheet_view.showGridLines=False; ws5.sheet_properties.tabColor=C["AMBER"]
     title_row(ws5,f"TOP {CONFIG['top_clientes']} CLIENTES",'A1:J1')
@@ -469,7 +469,7 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
     ws5.auto_filter.ref=f"A2:J{2+len(cliente_df)}"; ws5.freeze_panes='A3'
     for w,col in zip([5,20,35,24,10,10,16,16,14,10],range(1,11)): ws5.column_dimensions[get_column_letter(col)].width=w
     print("  ✅ Por Cliente")
- 
+
     # ── Top SKUs ─────────────────────────────────────────────────────────────
     ws6=wb.create_sheet("🏷 Top SKUs"); ws6.sheet_view.showGridLines=False; ws6.sheet_properties.tabColor=C["RED"]
     title_row(ws6,f"TOP {CONFIG['top_skus']} SKUs",'A1:I1')
@@ -481,7 +481,7 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
     ws6.auto_filter.ref=f"A2:I{2+len(sku_df)}"; ws6.freeze_panes='A3'
     for w,col in zip([5,20,14,40,12,10,10,16,14],range(1,10)): ws6.column_dimensions[get_column_letter(col)].width=w
     print("  ✅ Top SKUs")
- 
+
     # ── Evolución Diaria ─────────────────────────────────────────────────────
     ws7=wb.create_sheet("📈 Evolución Diaria"); ws7.sheet_view.showGridLines=False; ws7.sheet_properties.tabColor=C["BLUE"]
     title_row(ws7,"EVOLUCIÓN DIARIA",'A1:G1')
@@ -500,9 +500,9 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
     cats2=Reference(ws7,min_col=2,min_row=3,max_row=2+len(fecha_df))
     chart2.add_data(dr2,titles_from_data=True); chart2.set_categories(cats2); ws7.add_chart(chart2,"I2")
     print("  ✅ Evolución Diaria")
- 
+
     # ── Vendedores ────────────────────────────────────────────────────────────
-    ws8=wb.create_sheet("🧑‍💼 Vendedores"); ws8.sheet_view.showGridLines=False; ws8.sheet_properties.tabColor=C["DGRAY"]
+    ws8=wb.create_sheet("👔 Vendedores"); ws8.sheet_view.showGridLines=False; ws8.sheet_properties.tabColor=C["DGRAY"]
     title_row(ws8,"RENDIMIENTO POR VENDEDOR",'A1:N1')
     hdr(ws8,2,range(1,15),["#","Canal","Cód. Vendedor","Nombre Vendedor","Pedidos","Líneas","Clientes",
                             "Venta Sol. ($)","Fac. Bruto ($)","NC ZDEV ($)","Fac. Neto ($)","Rechazado ($)",
@@ -527,7 +527,7 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
     ws8.auto_filter.ref=f"A2:N{tr8}"; ws8.freeze_panes='A3'
     for i,w in enumerate([5,22,14,28,10,10,10,16,16,14,16,14,16,16],1): ws8.column_dimensions[get_column_letter(i)].width=w
     print("  ✅ Vendedores")
- 
+
     # ── Sin Entrega ───────────────────────────────────────────────────────────
     ws2=wb.create_sheet("🚨 Sin Entrega"); ws2.sheet_view.showGridLines=False; ws2.sheet_properties.tabColor=C["RED"]
     title_row(ws2,"CLIENTES SIN ENTREGA — PEDIDOS PENDIENTES",'A1:J1')
@@ -592,7 +592,7 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
     for i,w in enumerate(base_widths + doc_widths, 1):
         ws2.column_dimensions[get_column_letter(i)].width=w
     print("  ✅ Sin Entrega")
- 
+
     # ── Localidad ─────────────────────────────────────────────────────────────
     ws9=wb.create_sheet("📍 Por Localidad"); ws9.sheet_view.showGridLines=False
     title_row(ws9,f"TOP {CONFIG['top_localidades']} LOCALIDADES",'A1:F1')
@@ -605,7 +605,7 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
     ws9.auto_filter.ref=f"A2:F{2+len(loc_df)}"; ws9.freeze_panes='A3'
     for w,col in zip([5,20,22,12,12,18],range(1,7)): ws9.column_dimensions[get_column_letter(col)].width=w
     print("  ✅ Por Localidad")
- 
+
     # ── Notas Crédito ZDEV ────────────────────────────────────────────────────
     ws_nc=wb.create_sheet("🔴 Notas Crédito ZDEV"); ws_nc.sheet_view.showGridLines=False; ws_nc.sheet_properties.tabColor=C["RED"]
     title_row(ws_nc,"NOTAS DE CRÉDITO (ZDEV) — RESTADAS DEL FACTURADO",'A1:J1')
@@ -620,14 +620,14 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
     ws_nc.auto_filter.ref=f"A5:J{5+len(nc_det)}"; ws_nc.freeze_panes='A6'
     for w,col in zip([18,30,12,12,12,38,10,14,12,24],range(1,11)): ws_nc.column_dimensions[get_column_letter(col)].width=w
     print("  ✅ Notas Crédito ZDEV")
- 
+
     # Reordenar pestañas
     # ── Con Entrega No Facturado ─────────────────────────────────────────────
     if cenf_res is not None and len(cenf_res) > 0:
         ws_cf = wb.create_sheet("📬 Entrega No Facturado")
         ws_cf.sheet_view.showGridLines = False
         ws_cf.sheet_properties.tabColor = C["PURPLE"] if "PURPLE" in C else "7C3AED"
- 
+
         # Title
         ws_cf.merge_cells('A1:N1')
         c = ws_cf['A1']
@@ -635,7 +635,7 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
         c.font = Font(name="Arial", bold=True, size=13, color=C["WHITE"])
         c.fill = hfill("7C3AED"); c.alignment = Alignment(horizontal='left', vertical='center')
         ws_cf.row_dimensions[1].height = 28
- 
+
         # KPI strip
         kpi_cf = [
             ("PEDIDOS SIN FACTURAR", str(kpis['cenf_docs']),          "7C3AED", "EDE9FE"),
@@ -655,18 +655,18 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
             ws_cf.cell(6,col).fill=hfill(color)
         for r in [3,4,5,6]: ws_cf.row_dimensions[r].height=20
         ws_cf.row_dimensions[4].height=28
- 
+
         # Subtitle resumen
         ws_cf.merge_cells('A8:N8')
         c=ws_cf['A8']; c.value="  RESUMEN POR PEDIDO — CON ENTREGA GENERADA PERO AÚN NO FACTURADO"
         c.font=Font(name="Arial",bold=True,size=11,color=C["WHITE"])
         c.fill=hfill("7C3AED"); c.alignment=Alignment(horizontal='left',vertical='center')
         ws_cf.row_dimensions[8].height=22
- 
+
         hdrs_cf = ["#","Canal","Doc. Vta.","N° Entrega","Cliente","Nombre Vendedor",
                    "Líneas","Venta Sol. ($)","Facturado ($)","Diferencia ($)","Rechazado ($)"]
         hdr(ws_cf, 9, range(1,12), hdrs_cf, "7C3AED")
- 
+
         for j, rdf in cenf_res.iterrows():
             r = 10 + list(cenf_res.index).index(j)
             rank = list(cenf_res.index).index(j) + 1
@@ -683,7 +683,7 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
                 ws_cf.cell(r,10).font = Font(name="Arial", bold=True, color=C["AMBER"])
             if rdf['Rechazado'] > 0:
                 ws_cf.cell(r,11).fill = hfill(C["LORANG"])
- 
+
         tr_cf = 10 + len(cenf_res)
         total_row(ws_cf, tr_cf, 11, value_cols={
             7: int(cenf_res['Lineas'].sum()),
@@ -692,10 +692,10 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
             10: cenf_res['Diferencia'].sum(),
             11: cenf_res['Rechazado'].sum()})
         for col in [8,9,10,11]: ws_cf.cell(tr_cf,col).number_format='#,##0'
- 
+
         ws_cf.auto_filter.ref = f"A9:K{9+len(cenf_res)}"
         ws_cf.freeze_panes = 'A10'
- 
+
         # Detalle
         sep_cf = tr_cf + 2
         ws_cf.merge_cells(start_row=sep_cf,start_column=1,end_row=sep_cf,end_column=14)
@@ -703,7 +703,7 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
         c.font=Font(name="Arial",bold=True,size=11,color=C["WHITE"])
         c.fill=hfill("7C3AED"); c.alignment=Alignment(horizontal='left',vertical='center')
         ws_cf.row_dimensions[sep_cf].height=22
- 
+
         det_hdrs_cf = ["Canal","Doc. Vta.","N° Entrega","Cliente","Localidad","Fecha",
                        "SKU SAP","Descripción","Cant.","Venta Sol. ($)","Facturado ($)","Rechazado ($)",
                        "Vendedor","Nombre Vendedor"]
@@ -716,23 +716,23 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
             ws_cf.cell(r,12).number_format='#,##0'
             if (vals[10] or 0) == 0 and (vals[9] or 0) > 0:
                 ws_cf.cell(r,10).fill = hfill(C["LAMBER"])
- 
+
         ws_cf.auto_filter.ref=f"A{sep_cf+1}:N{sep_cf+1+len(cenf_det)}"
- 
+
         for i,w in enumerate([5,18,13,13,30,24,10,10,16,16,14,14,12,24],1):
             ws_cf.column_dimensions[get_column_letter(i)].width=w
- 
+
         print("  ✅ Entrega No Facturado")
- 
+
     order=["📊 Dashboard","🚨 Sin Entrega","📬 Entrega No Facturado","📋 Datos Limpios","📦 Por Canal",
-           "👥 Por Cliente","🏷 Top SKUs","📈 Evolución Diaria","🧑‍💼 Vendedores",
+           "👥 Por Cliente","🏷 Top SKUs","📈 Evolución Diaria","👔 Vendedores",
            "📍 Por Localidad","🔴 Notas Crédito ZDEV"]
     for i,name in enumerate(order):
         if name in wb.sheetnames:
             wb.move_sheet(name, offset=i-wb.sheetnames.index(name))
- 
+
     wb.save(ruta_salida)
- 
+
 # ══════════════════════════════════════════════════════════════════
 # MAIN
 # ══════════════════════════════════════════════════════════════════
@@ -741,24 +741,24 @@ if __name__ == "__main__":
         print("❌ Uso: python procesar_pedidos.py ARCHIVO.xls")
         print("   Ejemplo: python procesar_pedidos.py Pedidos_01-05-2026.xls")
         sys.exit(1)
- 
+
     ruta_entrada = sys.argv[1]
     if not os.path.exists(ruta_entrada):
         print(f"❌ No se encontró el archivo: {ruta_entrada}")
         sys.exit(1)
- 
+
     hoy = datetime.today().strftime("%Y-%m-%d")
     nombre_base = os.path.splitext(os.path.basename(ruta_entrada))[0]
     ruta_salida = f"Reporte_{nombre_base}_{hoy}.xlsx"
- 
+
     print(f"\n{'='*55}")
     print(f"  PROCESANDO: {os.path.basename(ruta_entrada)}")
     print(f"{'='*55}")
- 
+
     df, fecha_archivo = leer_archivo(ruta_entrada)
     df = limpiar(df)
     kpis, canal_df, cliente_df, fecha_df, sku_df, loc_df, vend_df, se_res, se_det, nc_det, base, sin_e, cenf_res, cenf_det = calcular_pivots(df)
- 
+
     print(f"\n📊 Resumen:")
     print(f"   Pedidos:      {kpis['total_pedidos']:,}")
     print(f"   Venta Sol.:   ${kpis['total_venta']:,.0f}")
@@ -767,12 +767,12 @@ if __name__ == "__main__":
     print(f"   Rechazado:    ${kpis['total_rechaz']:,.0f}")
     print(f"   Sin entrega:  {kpis['total_se_ped']} pedidos")
     print(f"   Tasa WMS:     {kpis['tasa_sm']:.1f}%")
- 
+
     print(f"\n📝 Generando hojas...")
     escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
                    sku_df, loc_df, vend_df, se_res, se_det, nc_det, base, ruta_salida,
                    cenf_res=cenf_res, cenf_det=cenf_det)
- 
+
     print(f"\n✅ Archivo generado:")
     print(f"   {ruta_salida}")
     print(f"{'='*55}\n")
