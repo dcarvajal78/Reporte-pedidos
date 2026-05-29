@@ -307,7 +307,7 @@ st.markdown("---")
 # ══════════════════════════════════════════════════════════════════
 # TABLAS PREVIEW
 # ══════════════════════════════════════════════════════════════════
-tab1, tab2, tab3, tab4 = st.tabs(["📦 Por Canal", "🚨 Sin Entrega", "👥 Top Clientes", "🧑‍💼 Vendedores"])
+tab1, tab2, tab3, tab4 = st.tabs(["📦 Por Canal", "🚨 Sin Entrega", "👥 Top Clientes", "👔 Vendedores"])
 
 with tab1:
     st.markdown("#### Ventas por Canal")
