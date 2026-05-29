@@ -272,13 +272,41 @@ def calcular_pivots(df):
                     'Estatus_SM',CONFIG["col_bloq"],CONFIG["col_den_bloq"],
                     CONFIG["col_vendedor"],CONFIG["col_nombre_vend"]]].copy()
 
-    return kpis, canal_df, cliente_df, fecha_df, sku_df, loc_df, vend_df, se_res, se_det, nc_det, base, sin_e
+
+    # ── Con Entrega y No Facturado ─────────────────────────────────────────
+    base['Tiene_Entrega'] = base[CONFIG["col_entrega"]].notna() & (base[CONFIG["col_entrega"]].str.strip() != '') & (base[CONFIG["col_entrega"]].str.strip() != 'nan')
+    base['No_Facturado']  = base[CONFIG["col_factura"]].fillna(0) == 0
+    cenf = base[base['Tiene_Entrega'] & base['No_Facturado']].copy()
+
+    # Resumen por cliente
+    cenf_res = cenf.groupby(['Canal','Cliente', CONFIG["col_entrega"], CONFIG["col_doc"], CONFIG["col_vendedor"], CONFIG["col_nombre_vend"]]).agg(
+        Lineas    =(CONFIG["col_doc"],    'count'),
+        Venta_Sol =(CONFIG["col_venta"],  'sum'),
+        Fac       =(CONFIG["col_factura"],'sum'),
+        Rechazado =('Rechaz',             'sum'),
+    ).reset_index()
+    cenf_res['Diferencia'] = cenf_res['Venta_Sol'] - cenf_res['Fac']
+    cenf_res = cenf_res.sort_values('Venta_Sol', ascending=False)
+
+    # KPIs
+    kpis['cenf_docs']   = cenf[CONFIG["col_doc"]].nunique()
+    kpis['cenf_venta']  = cenf[CONFIG["col_venta"]].sum()
+    kpis['cenf_canales']= cenf['Canal'].nunique()
+
+    # Detalle lineas
+    cenf_det = cenf[['Canal', CONFIG["col_doc"], CONFIG["col_entrega"], 'Cliente', 'Localidad', 'Fecha_str',
+                      CONFIG["col_sku"], 'Descripcion', CONFIG["col_cant"],
+                      CONFIG["col_venta"], CONFIG["col_factura"], 'Rechaz',
+                      CONFIG["col_vendedor"], CONFIG["col_nombre_vend"]]].copy()
+
+    return kpis, canal_df, cliente_df, fecha_df, sku_df, loc_df, vend_df, se_res, se_det, nc_det, base, sin_e, cenf_res, cenf_det
 
 # ══════════════════════════════════════════════════════════════════
 # 3. ESCRIBIR EXCEL
 # ══════════════════════════════════════════════════════════════════
 def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
-                   sku_df, loc_df, vend_df, se_res, se_det, nc_det, base, ruta_salida):
+                   sku_df, loc_df, vend_df, se_res, se_det, nc_det, base, ruta_salida,
+                   cenf_res=None, cenf_det=None):
 
     tv = kpis["total_venta"]; tfb = kpis["total_fac_bruto"]
     tnc = kpis["total_nc"];   tfn = kpis["total_fac_neto"]
@@ -594,7 +622,109 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
     print("  ✅ Notas Crédito ZDEV")
 
     # Reordenar pestañas
-    order=["📊 Dashboard","🚨 Sin Entrega","📋 Datos Limpios","📦 Por Canal",
+    # ── Con Entrega No Facturado ─────────────────────────────────────────────
+    if cenf_res is not None and len(cenf_res) > 0:
+        ws_cf = wb.create_sheet("📬 Entrega No Facturado")
+        ws_cf.sheet_view.showGridLines = False
+        ws_cf.sheet_properties.tabColor = C["PURPLE"] if "PURPLE" in C else "7C3AED"
+
+        # Title
+        ws_cf.merge_cells('A1:N1')
+        c = ws_cf['A1']
+        c.value = f"  PEDIDOS CON ENTREGA Y SIN FACTURAR  |  {fecha_archivo}"
+        c.font = Font(name="Arial", bold=True, size=13, color=C["WHITE"])
+        c.fill = hfill("7C3AED"); c.alignment = Alignment(horizontal='left', vertical='center')
+        ws_cf.row_dimensions[1].height = 28
+
+        # KPI strip
+        kpi_cf = [
+            ("PEDIDOS SIN FACTURAR", str(kpis['cenf_docs']),          "7C3AED", "EDE9FE"),
+            ("VENTA SOLICITADA",     f"${kpis['cenf_venta']/1e6:.1f}M","16A34A", "DCFCE7"),
+            ("CANALES AFECTADOS",    str(kpis['cenf_canales']),        "D97706", "FEF3C7"),
+            ("DIFERENCIA TOTAL",     f"${cenf_res['Diferencia'].sum()/1e6:.1f}M", "DC2626", "FEE2E2"),
+        ]
+        for i,(title,val,color,bg) in enumerate(kpi_cf):
+            col=i*3+1
+            ws_cf.merge_cells(start_row=3,start_column=col,end_row=3,end_column=col+2)
+            c=ws_cf.cell(3,col,title); c.font=Font(name="Arial",bold=True,size=9,color=color)
+            c.fill=hfill(bg); c.alignment=Alignment(horizontal='center',vertical='center')
+            ws_cf.merge_cells(start_row=4,start_column=col,end_row=5,end_column=col+2)
+            c=ws_cf.cell(4,col,val); c.font=Font(name="Arial",bold=True,size=17,color=color)
+            c.fill=hfill(bg); c.alignment=Alignment(horizontal='center',vertical='center')
+            ws_cf.merge_cells(start_row=6,start_column=col,end_row=6,end_column=col+2)
+            ws_cf.cell(6,col).fill=hfill(color)
+        for r in [3,4,5,6]: ws_cf.row_dimensions[r].height=20
+        ws_cf.row_dimensions[4].height=28
+
+        # Subtitle resumen
+        ws_cf.merge_cells('A8:N8')
+        c=ws_cf['A8']; c.value="  RESUMEN POR PEDIDO — CON ENTREGA GENERADA PERO AÚN NO FACTURADO"
+        c.font=Font(name="Arial",bold=True,size=11,color=C["WHITE"])
+        c.fill=hfill("7C3AED"); c.alignment=Alignment(horizontal='left',vertical='center')
+        ws_cf.row_dimensions[8].height=22
+
+        hdrs_cf = ["#","Canal","Doc. Vta.","N° Entrega","Cliente","Nombre Vendedor",
+                   "Líneas","Venta Sol. ($)","Facturado ($)","Diferencia ($)","Rechazado ($)"]
+        hdr(ws_cf, 9, range(1,12), hdrs_cf, "7C3AED")
+
+        for j, rdf in cenf_res.iterrows():
+            r = 10 + list(cenf_res.index).index(j)
+            rank = list(cenf_res.index).index(j) + 1
+            vals = [rank, rdf['Canal'], rdf[CONFIG["col_doc"]], rdf[CONFIG["col_entrega"]],
+                    rdf['Cliente'], rdf[CONFIG["col_nombre_vend"]],
+                    int(rdf['Lineas']), rdf['Venta_Sol'], rdf['Fac'],
+                    rdf['Diferencia'], rdf['Rechazado']]
+            drow(ws_cf, r, 1, vals, alt=(r%2==0))
+            ws_cf.cell(r,1).alignment = Alignment(horizontal='center',vertical='center')
+            for col in [8,9,10,11]: ws_cf.cell(r,col).number_format='#,##0'
+            # Highlight diferencia en amarillo si > 0
+            if rdf['Diferencia'] > 0:
+                ws_cf.cell(r,10).fill = hfill(C["LAMBER"])
+                ws_cf.cell(r,10).font = Font(name="Arial", bold=True, color=C["AMBER"])
+            if rdf['Rechazado'] > 0:
+                ws_cf.cell(r,11).fill = hfill(C["LORANG"])
+
+        tr_cf = 10 + len(cenf_res)
+        total_row(ws_cf, tr_cf, 11, value_cols={
+            7: int(cenf_res['Lineas'].sum()),
+            8: cenf_res['Venta_Sol'].sum(),
+            9: cenf_res['Fac'].sum(),
+            10: cenf_res['Diferencia'].sum(),
+            11: cenf_res['Rechazado'].sum()})
+        for col in [8,9,10,11]: ws_cf.cell(tr_cf,col).number_format='#,##0'
+
+        ws_cf.auto_filter.ref = f"A9:K{9+len(cenf_res)}"
+        ws_cf.freeze_panes = 'A10'
+
+        # Detalle
+        sep_cf = tr_cf + 2
+        ws_cf.merge_cells(start_row=sep_cf,start_column=1,end_row=sep_cf,end_column=14)
+        c=ws_cf.cell(sep_cf,1,"  DETALLE DE LÍNEAS CON ENTREGA Y SIN FACTURAR")
+        c.font=Font(name="Arial",bold=True,size=11,color=C["WHITE"])
+        c.fill=hfill("7C3AED"); c.alignment=Alignment(horizontal='left',vertical='center')
+        ws_cf.row_dimensions[sep_cf].height=22
+
+        det_hdrs_cf = ["Canal","Doc. Vta.","N° Entrega","Cliente","Localidad","Fecha",
+                       "SKU SAP","Descripción","Cant.","Venta Sol. ($)","Facturado ($)","Rechazado ($)",
+                       "Vendedor","Nombre Vendedor"]
+        hdr(ws_cf, sep_cf+1, range(1,15), det_hdrs_cf, "7C3AED")
+        for j2, rdet in enumerate(cenf_det.itertuples(index=False),1):
+            r=sep_cf+1+j2; vals=list(rdet)
+            drow(ws_cf,r,1,vals,alt=(r%2==0))
+            ws_cf.cell(r,10).number_format='#,##0'
+            ws_cf.cell(r,11).number_format='#,##0'
+            ws_cf.cell(r,12).number_format='#,##0'
+            if (vals[10] or 0) == 0 and (vals[9] or 0) > 0:
+                ws_cf.cell(r,10).fill = hfill(C["LAMBER"])
+
+        ws_cf.auto_filter.ref=f"A{sep_cf+1}:N{sep_cf+1+len(cenf_det)}"
+
+        for i,w in enumerate([5,18,13,13,30,24,10,10,16,16,14,14,12,24],1):
+            ws_cf.column_dimensions[get_column_letter(i)].width=w
+
+        print("  ✅ Entrega No Facturado")
+
+    order=["📊 Dashboard","🚨 Sin Entrega","📬 Entrega No Facturado","📋 Datos Limpios","📦 Por Canal",
            "👥 Por Cliente","🏷 Top SKUs","📈 Evolución Diaria","🧑‍💼 Vendedores",
            "📍 Por Localidad","🔴 Notas Crédito ZDEV"]
     for i,name in enumerate(order):
@@ -627,7 +757,7 @@ if __name__ == "__main__":
 
     df, fecha_archivo = leer_archivo(ruta_entrada)
     df = limpiar(df)
-    kpis, canal_df, cliente_df, fecha_df, sku_df, loc_df, vend_df, se_res, se_det, nc_det, base, sin_e = calcular_pivots(df)
+    kpis, canal_df, cliente_df, fecha_df, sku_df, loc_df, vend_df, se_res, se_det, nc_det, base, sin_e, cenf_res, cenf_det = calcular_pivots(df)
 
     print(f"\n📊 Resumen:")
     print(f"   Pedidos:      {kpis['total_pedidos']:,}")
@@ -640,7 +770,8 @@ if __name__ == "__main__":
 
     print(f"\n📝 Generando hojas...")
     escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
-                   sku_df, loc_df, vend_df, se_res, se_det, nc_det, base, ruta_salida)
+                   sku_df, loc_df, vend_df, se_res, se_det, nc_det, base, ruta_salida,
+                   cenf_res=cenf_res, cenf_det=cenf_det)
 
     print(f"\n✅ Archivo generado:")
     print(f"   {ruta_salida}")
