@@ -31,11 +31,11 @@ CONFIG = {
     "top_vendedores":  50,                # cuántos vendedores mostrar
     "tipo_nc":         "ZDEV",            # ClDocVenta que = nota de crédito
     "col_canal":       "Den.Of.Vta",
-    "col_cliente":     "Nombre del solicitante",
+    "col_cliente":     "Nmbr Solic",
     "col_material":    "Texto breve material",
     "col_fecha":       "FchCrea.Pe",
     "col_vendedor":    "Vendedor",
-    "col_nombre_vend": "Nombre vendedor",
+    "col_nombre_vend": "Nombre Ven",
     "col_venta":       "Mon.Sol.$",
     "col_factura":     "Mon.Fac.$",
     "col_rechaz":      "Mnt.Rechaz",
@@ -362,9 +362,9 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
     kpi_list = [
         ("PEDIDOS TOTALES",    f"{kpis['total_pedidos']:,.0f}",       C["NAVY"],   C["LBLUE"]),
         ("VENTA SOLICITADA",   f"${tv/1e6:.1f}M",                     C["BLUE"],   C["LBLUE"]),
-        ("FAC. BRUTO",         f"${tfb/1e6:.1f}M",                    C["GREEN"],  C["LGREEN"]),
-        ("NOTAS CRÉD. ZDEV",   f"-${tnc/1e6:.1f}M",                   C["RED"],    C["LRED"]),
-        ("FAC. NETO",          f"${tfn/1e6:.1f}M",                    C["GREEN"],  C["LGREEN"]),
+        ("FACTURADO BRUTO",    f"${tfb/1e6:.1f}M",                    C["GREEN"],  C["LGREEN"]),
+        ("NC ZDEV (-)",        f"-${tnc/1e6:.1f}M",                   C["RED"],    C["LRED"]),
+        ("FACTURADO REAL",     f"${tfn/1e6:.1f}M",                    C["GREEN"],  C["LGREEN"]),
         ("RECHAZADO",          f"${tr/1e6:.1f}M",                     C["ORANGE"], C["LORANG"]),
         ("TASA ENTREGA WMS",   f"{kpis['tasa_sm']:.1f}%",
             C["GREEN"] if kpis['tasa_sm']>90 else C["AMBER"],
@@ -387,7 +387,7 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
     c.value = "  RESUMEN POR CANAL  (Fac. Neto = Fac. Bruto − NC ZDEV)"
     c.font = Font(name="Arial", bold=True, size=11, color=C["WHITE"])
     c.fill = hfill(C["NAVY"]); c.alignment = Alignment(horizontal='left', vertical='center'); ws.row_dimensions[8].height = 22
-    hdr(ws, 9, range(1,10), ["Canal","Pedidos","Líneas","Unidades","Venta Sol. ($)","Fac. Bruto ($)","NC ZDEV ($)","Fac. Neto ($)","Rechazado ($)"], C["BLUE"])
+    hdr(ws, 9, range(1,10), ["Canal","Pedidos","Líneas","Unidades","Venta Sol. ($)","Fac. Bruto ($)","NC ZDEV ($)","Fac. Real ($)","Rechazado ($)"], C["BLUE"])
     for i, row in canal_df.iterrows():
         r = 10 + list(canal_df.index).index(i); nc_val = row.get('NC', 0)
         vals = [row['Canal'],int(row['Pedidos']),int(row['Lineas']),int(row['Unidades']),
@@ -395,22 +395,24 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
         drow(ws, r, 1, vals, alt=(r%2==0))
         for col in [5,6,7,8,9]: ws.cell(r,col).number_format='#,##0'
         if nc_val>0: ws.cell(r,7).fill=hfill(C["LRED"]); ws.cell(r,7).font=Font(name="Arial",color=C["RED"])
+        ws.cell(r,8).fill=hfill(C["LGREEN"]); ws.cell(r,8).font=Font(name="Arial",bold=True,color=C["GREEN"])
         if row['Rechazado']>0: ws.cell(r,9).fill=hfill(C["LORANG"])
     tr_r = 10+len(canal_df)
     total_row(ws, tr_r, 9, value_cols={2:kpis['total_pedidos'],3:kpis['total_lineas'],
         5:tv,6:tfb,7:tnc,8:tfn,9:tr})
     for col in [5,6,7,8,9]: ws.cell(tr_r,col).number_format='#,##0'
+    ws.cell(tr_r,8).fill=hfill(C["GREEN"])
 
     ws.merge_cells('K8:Q8'); c=ws['K8']
     c.value="  TOP 10 CLIENTES"; c.font=Font(name="Arial",bold=True,size=11,color=C["WHITE"])
     c.fill=hfill(C["NAVY"]); c.alignment=Alignment(horizontal='left',vertical='center')
-    hdr(ws,9,range(11,18),["Canal","Cliente","Pedidos","Venta Sol. ($)","Fac. Neto ($)","Rechazado ($)","Part. %"],C["BLUE"])
+    hdr(ws,9,range(11,18),["Canal","Cliente","Pedidos","Venta Sol. ($)","Facturado ($)","Rechazado ($)","Part. %"],C["BLUE"])
     for j,row in enumerate(cliente_df.head(10).itertuples(index=False),1):
         r=9+j; vals=[row.Canal,row.Cliente,int(row.Pedidos),row.Venta_Sol,row.Fac_Neto,row.Rechazado,row.Venta_Sol/tv]
         drow(ws,r,11,vals,alt=(r%2==0))
         for col in [14,15,16]: ws.cell(r,col).number_format='#,##0'
         ws.cell(r,17).number_format='0.0%'
-    for i,w in enumerate([1,22,10,10,12,14,14,14,14,1,18,30,10,14,14,14,10],1):
+    for i,w in enumerate([22,10,10,12,16,16,14,16,14,2,18,30,10,14,14,14,10],1):
         ws.column_dimensions[get_column_letter(i)].width=w
     print("  ✅ Dashboard")
 
@@ -432,7 +434,7 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
     ws4 = wb.create_sheet("📦 Por Canal")
     ws4.sheet_view.showGridLines=False; ws4.sheet_properties.tabColor=C["GREEN"]
     title_row(ws4,"ANÁLISIS POR CANAL",'A1:J1')
-    hdr(ws4,2,range(1,11),["Canal","Pedidos","Líneas","Unidades","Venta Sol. ($)","Fac. Bruto ($)","NC ZDEV ($)","Fac. Neto ($)","Rechazado ($)","Part. %"])
+    hdr(ws4,2,range(1,11),["Canal","Pedidos","Líneas","Unidades","Venta Sol. ($)","Fac. Bruto ($)","NC ZDEV ($)","Fac. Real ($)","Rechazado ($)","Part. %"])
     for i,row in canal_df.iterrows():
         r=3+list(canal_df.index).index(i); nc_val=row.get('NC',0)
         vals=[row['Canal'],int(row['Pedidos']),int(row['Lineas']),int(row['Unidades']),
@@ -441,11 +443,13 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
         for col in [5,6,7,8,9]: ws4.cell(r,col).number_format='#,##0'
         ws4.cell(r,10).number_format='0.0%'
         if nc_val>0: ws4.cell(r,7).fill=hfill(C["LRED"]); ws4.cell(r,7).font=Font(name="Arial",color=C["RED"])
+        ws4.cell(r,8).fill=hfill(C["LGREEN"]); ws4.cell(r,8).font=Font(name="Arial",bold=True,color=C["GREEN"])
         if row['Rechazado']>0: ws4.cell(r,9).fill=hfill(C["LORANG"])
     tr4=3+len(canal_df)
     total_row(ws4,tr4,10,value_cols={2:kpis['total_pedidos'],3:kpis['total_lineas'],5:tv,6:tfb,7:tnc,8:tfn,9:tr,10:1.0})
     for col in [5,6,7,8,9]: ws4.cell(tr4,col).number_format='#,##0'
     ws4.cell(tr4,10).number_format='0.0%'
+    ws4.cell(tr4,8).fill=hfill(C["GREEN"])
     for w,col in zip([24,10,10,12,16,16,14,16,14,10],range(1,11)): ws4.column_dimensions[get_column_letter(col)].width=w
     chart=BarChart(); chart.type="bar"; chart.title="Venta por Canal ($)"; chart.style=10; chart.width=20; chart.height=12
     dr=Reference(ws4,min_col=5,max_col=5,min_row=2,max_row=2+len(canal_df))
@@ -504,27 +508,34 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
     # ── Vendedores ────────────────────────────────────────────────────────────
     ws8=wb.create_sheet("👔 Vendedores"); ws8.sheet_view.showGridLines=False; ws8.sheet_properties.tabColor=C["DGRAY"]
     title_row(ws8,"RENDIMIENTO POR VENDEDOR",'A1:N1')
-    hdr(ws8,2,range(1,15),["#","Canal","Cód. Vendedor","Nombre Vendedor","Pedidos","Líneas","Clientes",
-                            "Venta Sol. ($)","Fac. Bruto ($)","NC ZDEV ($)","Fac. Neto ($)","Rechazado ($)",
-                            "Sin Entrega (Ped.)","Sin Entrega ($)"])
+    hdr(ws8,2,range(1,16),["#","Canal","Cód. Vendedor","Nombre Vendedor","Pedidos","Líneas","Clientes",
+                            "Venta Sol. ($)","Fac. Bruto ($)","NC ZDEV ($)","Fac. Real ($)","Rechazado ($)",
+                            "Sin Entrega (Ped.)","Sin Entrega ($)","Part. %"])
     for j,rdf in vend_df.iterrows():
         r=3+list(vend_df.index).index(j); rank=list(vend_df.index).index(j)+1
+        part_vend = rdf['Venta_Sol']/tv if tv else 0
+        fac_real_v = rdf['Fac_Bruto'] - rdf['NC_ZDEV']
         vals=[rank,rdf['Canal'],str(rdf[CONFIG["col_vendedor"]]),str(rdf[CONFIG["col_nombre_vend"]]),
               int(rdf['Pedidos']),int(rdf['Lineas']),int(rdf['Clientes']),
-              rdf['Venta_Sol'],rdf['Fac_Bruto'],rdf['NC_ZDEV'],rdf['Fac_Neto'],rdf['Rechazado'],
-              int(rdf['SE_Ped']),rdf['SE_Val']]
+              rdf['Venta_Sol'],rdf['Fac_Bruto'],rdf['NC_ZDEV'],fac_real_v,rdf['Rechazado'],
+              int(rdf['SE_Ped']),rdf['SE_Val'],part_vend]
         drow(ws8,r,1,vals,alt=(r%2==0))
         for col in [8,9,10,11,12,14]: ws8.cell(r,col).number_format='#,##0'
+        ws8.cell(r,15).number_format='0.0%'
         ws8.cell(r,1).alignment=Alignment(horizontal='center',vertical='center')
         if rdf['NC_ZDEV']>0: ws8.cell(r,10).fill=hfill(C["LRED"]); ws8.cell(r,10).font=Font(name="Arial",color=C["RED"])
+        ws8.cell(r,11).fill=hfill(C["LGREEN"]); ws8.cell(r,11).font=Font(name="Arial",bold=True,color=C["GREEN"])
         if rdf['Rechazado']>0: ws8.cell(r,12).fill=hfill(C["LORANG"])
         if rdf['SE_Ped']>0: ws8.cell(r,13).fill=hfill(C["LAMBER"]); ws8.cell(r,13).font=Font(name="Arial",bold=True,color=C["AMBER"]); ws8.cell(r,14).fill=hfill(C["LAMBER"])
     tr8=3+len(vend_df)
-    total_row(ws8,tr8,14,value_cols={8:tv,9:tfb,10:tnc,11:tfn,12:tr,13:kpis['total_se_ped'],14:kpis['total_se_val']})
+    total_row(ws8,tr8,15,value_cols={8:tv,9:tfb,10:tnc,11:tfn,12:tr,13:kpis['total_se_ped'],14:kpis['total_se_val'],15:1.0})
     for col in [8,9,10,11,12,14]: ws8.cell(tr8,col).number_format='#,##0'
+    ws8.cell(tr8,15).number_format='0.0%'
+    ws8.cell(tr8,11).fill=hfill(C["GREEN"])
+    for i,w in enumerate([5,22,14,28,10,10,10,16,16,14,16,14,16,16,10],1): ws8.column_dimensions[get_column_letter(i)].width=w
     ws8.conditional_formatting.add(f"H3:H{tr8-1}",
         ColorScaleRule(start_type='min',start_color='FEE2E2',mid_type='percentile',mid_value=50,mid_color='FEF3C7',end_type='max',end_color='DCFCE7'))
-    ws8.auto_filter.ref=f"A2:N{tr8}"; ws8.freeze_panes='A3'
+    ws8.auto_filter.ref=f"A2:O{tr8}"; ws8.freeze_panes='A3'
     for i,w in enumerate([5,22,14,28,10,10,10,16,16,14,16,14,16,16],1): ws8.column_dimensions[get_column_letter(i)].width=w
     print("  ✅ Vendedores")
 
