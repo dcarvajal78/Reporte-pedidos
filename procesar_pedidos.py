@@ -97,6 +97,49 @@ def total_row(ws, r, n_cols, value_cols={}):
         ws.cell(r, col).alignment = Alignment(horizontal='right', vertical='center')
 
 # ══════════════════════════════════════════════════════════════════
+# ALIASES DE COLUMNAS — nombres alternativos que el archivo puede traer
+# ══════════════════════════════════════════════════════════════════
+COLUMN_ALIASES = {
+    "col_cliente":     ["Nombre del solicitante", "Nmbr Solic", "Nombre Solic", "Nmbr.Solic"],
+    "col_nombre_vend": ["Nombre vendedor", "Nombre Ven", "Nmbr Vend", "Nombre Vendedor"],
+    "col_canal":       ["Den.Of.Vta", "Den Of Vta"],
+    "col_vendedor":    ["Vendedor"],
+    "col_venta":       ["Mon.Sol.$", "Mon Sol $"],
+    "col_factura":     ["Mon.Fac.$", "Mon Fac $"],
+    "col_entrega":     ["Entrega"],
+    "col_doc":         ["Doc.vta.", "Doc vta", "Doc.Vta."],
+    "col_tipo_doc":    ["ClDocVenta", "Cl Doc Venta"],
+    "col_estatus_sm":  ["Estatus SM", "Estatus_SM"],
+    "col_estatus_fa":  ["Estatus FA", "Estatus_FA"],
+    "col_fecha":       ["FchCrea.Pe", "FchCrea Pe"],
+    "col_rechaz":      ["Mnt.Rechaz", "Mnt Rechaz"],
+    "col_cant":        ["Cant. Ori.", "Cant Ori"],
+    "col_sku":         ["SKU SAP"],
+    "col_material":    ["Texto breve material"],
+    "col_bloq":        ["BloqEntreg"],
+    "col_den_bloq":    ["Den.Bl.Ent", "Den Bl Ent"],
+    "col_mot_rech":    ["Mot. Rech.", "Mot Rech"],
+}
+
+def adaptar_columnas(df):
+    """Ajusta CONFIG para que coincida con los nombres de columna reales del archivo."""
+    cols = set(df.columns.tolist())
+    cambios = []
+    for config_key, aliases in COLUMN_ALIASES.items():
+        current = CONFIG[config_key]
+        if current not in cols:
+            for alias in aliases:
+                if alias in cols:
+                    CONFIG[config_key] = alias
+                    cambios.append(f"  {config_key}: '{current}' → '{alias}'")
+                    break
+    if cambios:
+        print("⚠️  Columnas adaptadas automáticamente:")
+        for c in cambios:
+            print(c)
+    return df
+
+# ══════════════════════════════════════════════════════════════════
 # 1. LEER Y LIMPIAR DATOS
 # ══════════════════════════════════════════════════════════════════
 def leer_archivo(ruta):
@@ -110,6 +153,7 @@ def leer_archivo(ruta):
     df = pd.read_csv(io.StringIO(''.join(data_lines)), sep=CONFIG["separador"], dtype=str)
     df.columns = [c.strip() for c in df.columns]
     df = df.drop(columns=['Unnamed: 0'], errors='ignore')
+    df = adaptar_columnas(df)
     return df, fecha_archivo
 
 def limpiar(df):
@@ -142,7 +186,10 @@ def limpiar(df):
     df['Estatus_FA']  = df[CONFIG["col_estatus_fa"]].str.strip()
     df['Es_ZDEV']     = df[CONFIG["col_tipo_doc"]] == CONFIG["tipo_nc"]
     df['Rechaz']      = df[CONFIG["col_rechaz"]].fillna(0)
-    df['Sin_Entrega'] = df[CONFIG["col_entrega"]].isna() | (df['Estatus_SM'] == 'A')
+    # Un pedido es "Sin Entrega" SOLO si el número de entrega está vacío/nulo.
+    # Estatus SM = 'A' (abierto/parcial) NO significa sin entrega si ya tiene número asignado.
+    entrega_col = df[CONFIG["col_entrega"]]
+    df['Sin_Entrega'] = entrega_col.isna() | (entrega_col.astype(str).str.strip().isin(['', 'nan', 'None']))
     df['Fac_Neto']    = np.where(df['Es_ZDEV'], -df[CONFIG["col_factura"]], df[CONFIG["col_factura"]])
     return df
 
