@@ -461,6 +461,54 @@ def escribir_excel(df, fecha_archivo, kpis, canal_df, cliente_df, fecha_df,
         ws.cell(r,17).number_format='0.0%'
     for i,w in enumerate([22,10,10,12,16,16,14,16,14,2,18,30,10,14,14,14,10],1):
         ws.column_dimensions[get_column_letter(i)].width=w
+
+    # ── Sin Entrega por Cliente (Dashboard) ──────────────────────────────────
+    se_dash_row = tr_r + 2  # empieza debajo de la tabla de canales
+    ws.merge_cells(start_row=se_dash_row, start_column=1, end_row=se_dash_row, end_column=9)
+    c = ws.cell(se_dash_row, 1)
+    c.value = f"  SIN ENTREGA POR CLIENTE  |  {kpis['total_se_ped']} pedidos en riesgo"
+    c.font = Font(name="Arial", bold=True, size=11, color=C["WHITE"])
+    c.fill = hfill(C["RED"]); c.alignment = Alignment(horizontal='left', vertical='center')
+    ws.row_dimensions[se_dash_row].height = 22
+
+    se_hdr_row = se_dash_row + 1
+    hdr(ws, se_hdr_row, range(1,9),
+        ["Canal","Cliente","Nombre Vendedor","Pedidos S/E","Líneas","Venta en Riesgo ($)","Bloqueados","Motivo"],
+        C["ORANGE"])
+
+    # Resumen sin entrega agrupado por cliente (top 15 por venta en riesgo)
+    se_dash = se_res.sort_values('Venta_Sol', ascending=False).head(15)
+    for j, rdf in enumerate(se_dash.itertuples(index=False), 1):
+        r = se_hdr_row + j
+        nombre_vend = getattr(rdf, CONFIG["col_nombre_vend"].replace(' ','_').replace('.','_'), '') or ''
+        vals = [
+            rdf.Canal,
+            rdf.Cliente,
+            str(nombre_vend),
+            int(rdf.Pedidos),
+            int(rdf.Lineas),
+            rdf.Venta_Sol,
+            int(rdf.Bloq),
+            rdf.Motivo,
+        ]
+        drow(ws, r, 1, vals, alt=(r%2==0))
+        ws.cell(r,6).number_format='#,##0'
+        if rdf.Venta_Sol > 0:
+            ws.cell(r,6).fill = hfill(C["LRED"])
+            ws.cell(r,6).font = Font(name="Arial", bold=True, color=C["RED"])
+        if rdf.Bloq > 0:
+            ws.cell(r,7).fill = hfill(C["LORANG"])
+            ws.cell(r,7).font = Font(name="Arial", bold=True, color=C["AMBER"])
+
+    se_tot_row = se_hdr_row + 1 + len(se_dash)
+    total_row(ws, se_tot_row, 9, value_cols={
+        4: int(se_res['Pedidos'].sum()),
+        5: int(se_res['Lineas'].sum()),
+        6: se_res['Venta_Sol'].sum(),
+    })
+    ws.cell(se_tot_row, 6).number_format='#,##0'
+    ws.cell(se_tot_row, 6).fill = hfill(C["RED"])
+
     print("  ✅ Dashboard")
 
     def sheet_canal(name, tab, title, mr, hdrs_list, data_df, data_fn, col_widths, n_tot_cols, tot_vals):
